@@ -1,8 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
-import { db } from "@/db";
+import { db, sqlQuery } from "@/db";
 import { actualites } from "@/db/schema";
-import { desc, sql } from "drizzle-orm";
+import { desc } from "drizzle-orm";
+
 import EmissionCard from "@/components/emissions/EmissionCard";
 import ActualiteCard from "@/components/actualites/ActualiteCard";
 import DerniersJournaux from "@/components/home/DerniersJournaux";
@@ -25,13 +26,11 @@ async function getData() {
     return 1;
   }
 
-  const [emissionsResult, actusRaw, articlesResult] = await Promise.all([
-    db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE visible = true ORDER BY published_at DESC LIMIT 200`),
+  const [allEmissions, actusRaw, articlesRaw] = await Promise.all([
+    sqlQuery`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE visible = true ORDER BY published_at DESC LIMIT 200`,
     db.select().from(actualites).orderBy(desc(actualites.publieLe)).limit(20),
-    db.execute(sql`SELECT a.id, a.titre, a.slug, a.image_url as "imageUrl", a.created_at as "createdAt", a.categorie, u.nom as auteur_nom FROM articles a LEFT JOIN users u ON u.id = a.auteur_id WHERE a.statut = 'publie' ORDER BY a.created_at DESC LIMIT 3`),
+    sqlQuery`SELECT a.id, a.titre, a.slug, a.image_url as "imageUrl", a.created_at as "createdAt", a.categorie, u.nom as auteur_nom FROM articles a LEFT JOIN users u ON u.id = a.auteur_id WHERE a.statut = 'publie' ORDER BY a.created_at DESC LIMIT 3`,
   ]);
-  const allEmissions = emissionsResult.rows as any[];
-  const articlesRaw = articlesResult.rows as any[];
 
   const dernieresActus = actusRaw
     .sort((a, b) => {

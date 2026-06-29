@@ -1,5 +1,4 @@
-import { db } from "@/db";
-import { sql } from "drizzle-orm";
+import { sqlQuery } from "@/db";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -9,10 +8,8 @@ import Link from "next/link";
 export const dynamic = 'force-dynamic';
 
 export default async function EmissionPage({ params }: { params: { videoId: string } }) {
-  const result = await db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE yt_video_id = ${params.videoId} LIMIT 1`);
-  const emission = result.rows as any[];
+  const emission = await sqlQuery`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE yt_video_id = ${params.videoId} LIMIT 1` as any[];
   if (!emission[0]) notFound();
-
   const e = emission[0];
 
   return (

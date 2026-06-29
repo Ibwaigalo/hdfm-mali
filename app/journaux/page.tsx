@@ -1,5 +1,4 @@
-import { db } from "@/db";
-import { sql } from "drizzle-orm";
+import { sqlQuery } from "@/db";
 import EmissionCard from "@/components/emissions/EmissionCard";
 import type { Metadata } from "next";
 
@@ -13,8 +12,7 @@ const LANGUES = [
 ];
 
 export default async function JournauxPage() {
-  const result = await db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE visible = true ORDER BY published_at DESC LIMIT 100`);
-  const allEmissions = result.rows as any[];
+  const allEmissions = await sqlQuery`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE visible = true ORDER BY published_at DESC LIMIT 100` as any[];
 
   const grouped: Record<string, any[]> = { Français: [], Arabe: [], Bambara: [] };
 
