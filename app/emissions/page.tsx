@@ -4,13 +4,10 @@ import EmissionCard from "@/components/emissions/EmissionCard";
 import { CATEGORIES, getCategory } from "@/lib/categories";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { maybeSyncEmissions } from "@/lib/sync";
-
 export const metadata: Metadata = { title: "Émissions" };
 export const dynamic = 'force-dynamic';
 
 export default async function EmissionsPage({ searchParams }: { searchParams: { cat?: string } }) {
-  await maybeSyncEmissions();
   const activeCat = searchParams.cat || "all";
 
   const result = await db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE visible = true ORDER BY published_at DESC LIMIT 300`);

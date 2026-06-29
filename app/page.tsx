@@ -15,13 +15,9 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { ChevronRight, Radio, Globe, Mic, Eye, Flag, Calendar, Youtube, Mail, Heart } from "lucide-react";
 import RadiosMarquee from "@/components/radios/RadiosMarquee";
-import { maybeSyncEmissions } from "@/lib/sync";
-
 export const dynamic = 'force-dynamic';
 
 async function getData() {
-  await maybeSyncEmissions();
-
   function getMaliScore(titre: string): number {
     const t = titre.toLowerCase();
     if (["mali", "malien", "bamako", "gao", "mopti", "kidal"].some(kw => t.includes(kw))) return 3;
