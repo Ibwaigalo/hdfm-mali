@@ -15,6 +15,8 @@ export async function maybeSyncEmissions(): Promise<void> {
   syncingEmissions = true;
   try {
     await syncYouTubeEmissions();
+  } catch (e) {
+    console.error("Sync emissions error:", e);
   } finally {
     syncingEmissions = false;
   }
@@ -30,6 +32,8 @@ export async function maybeSyncActualites(): Promise<void> {
   syncingActualites = true;
   try {
     await syncActualites();
+  } catch (e) {
+    console.error("Sync actualites error:", e);
   } finally {
     syncingActualites = false;
   }
