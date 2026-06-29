@@ -1,6 +1,5 @@
 import { db } from "@/db";
-import { emissions } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import Image from "next/image";
@@ -11,7 +10,8 @@ export const metadata: Metadata = { title: "Émissions - Admin" };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminEmissions() {
-  const liste = await db.select().from(emissions).orderBy(desc(emissions.publishedAt)).limit(100);
+  const result = await db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions ORDER BY published_at DESC LIMIT 100`);
+  const liste = result.rows as any[];
 
   return (
     <div>

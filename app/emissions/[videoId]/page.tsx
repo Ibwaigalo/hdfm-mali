@@ -1,16 +1,16 @@
 import { db } from "@/db";
-import { emissions } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Calendar, Clock, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
-export const revalidate = 3600;
+export const dynamic = 'force-dynamic';
 
 export default async function EmissionPage({ params }: { params: { videoId: string } }) {
-  const emission = await db.select().from(emissions).where(eq(emissions.ytVideoId, params.videoId)).limit(1);
+  const result = await db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE yt_video_id = ${params.videoId} LIMIT 1`);
+  const emission = result.rows as any[];
   if (!emission[0]) notFound();
 
   const e = emission[0];

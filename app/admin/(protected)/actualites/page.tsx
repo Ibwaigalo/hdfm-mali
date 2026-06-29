@@ -4,6 +4,7 @@ import { desc } from "drizzle-orm";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { ExternalLink } from "lucide-react";
+import SyncActualitesButton from "@/components/admin/SyncActualitesButton";
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,10 @@ export default async function AdminActualites() {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "Inter, sans-serif", fontWeight: 800, fontSize: "1.5rem", color: "#1A1A2E", marginBottom: "0.5rem" }}>Actualités humanitaires</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "0.5rem" }}>
+        <h1 style={{ fontFamily: "Inter, sans-serif", fontWeight: 800, fontSize: "1.5rem", color: "#1A1A2E" }}>Actualités humanitaires</h1>
+        <SyncActualitesButton />
+      </div>
       <p style={{ color: "#5a6474", fontSize: "0.875rem", marginBottom: "2rem" }}>{liste.length} actualités agrégées. Synchronisation automatique toutes les 30 minutes.</p>
 
       <div style={{ background: "white", border: "1px solid #dde2ea", borderRadius: 10, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>

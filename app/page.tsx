@@ -1,20 +1,23 @@
 import Link from "next/link";
+import Image from "next/image";
 import { db } from "@/db";
-import { emissions, actualites, programme } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { actualites } from "@/db/schema";
+import { desc, sql } from "drizzle-orm";
 import EmissionCard from "@/components/emissions/EmissionCard";
 import ActualiteCard from "@/components/actualites/ActualiteCard";
 import DerniersJournaux from "@/components/home/DerniersJournaux";
+
 import FadeInUp from "@/components/animations/FadeInUp";
 import StaggerContainer from "@/components/animations/StaggerContainer";
 import StaggerItem from "@/components/animations/StaggerItem";
 import { getCategory } from "@/lib/categories";
-import { ChevronRight, Radio, Globe, Mic, Eye, Flag } from "lucide-react";
+import { format } from "date-fns";
+import { fr } from "date-fns/locale";
+import { ChevronRight, Radio, Globe, Mic, Eye, Flag, Calendar, Youtube, Mail, Heart } from "lucide-react";
 import RadiosMarquee from "@/components/radios/RadiosMarquee";
 import { maybeSyncEmissions } from "@/lib/sync";
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 1800;
 
 async function getData() {
   await maybeSyncEmissions();
@@ -26,10 +29,13 @@ async function getData() {
     return 1;
   }
 
-  const [allEmissions, actusRaw] = await Promise.all([
-    db.select().from(emissions).where(eq(emissions.visible, true)).orderBy(desc(emissions.publishedAt)).limit(200),
+  const [emissionsResult, actusRaw, articlesResult] = await Promise.all([
+    db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE visible = true ORDER BY published_at DESC LIMIT 200`),
     db.select().from(actualites).orderBy(desc(actualites.publieLe)).limit(20),
+    db.execute(sql`SELECT a.id, a.titre, a.slug, a.image_url as "imageUrl", a.created_at as "createdAt", a.categorie, u.nom as auteur_nom FROM articles a LEFT JOIN users u ON u.id = a.auteur_id WHERE a.statut = 'publie' ORDER BY a.created_at DESC LIMIT 3`),
   ]);
+  const allEmissions = emissionsResult.rows as any[];
+  const articlesRaw = articlesResult.rows as any[];
 
   const dernieresActus = actusRaw
     .sort((a, b) => {
@@ -40,7 +46,7 @@ async function getData() {
     .slice(0, 3);
 
   // Dernier journal par langue
-  const grouped: Record<string, typeof allEmissions> = { Français: [], Arabe: [], Bambara: [] };
+  const grouped: Record<string, any[]> = { Français: [], Arabe: [], Bambara: [] };
   for (const e of allEmissions) {
     const titre = e.titre.toLowerCase();
     if (titre.includes("journal") || titre.includes("jr") || titre.includes("info")) {
@@ -61,6 +67,10 @@ async function getData() {
     emission,
   })).sort((a, b) => (getCategory(a.catId)?.label || a.catId).localeCompare(getCategory(b.catId)?.label || b.catId));
 
+  // Stats
+  const journalsCount = grouped.Français.length + grouped.Arabe.length + grouped.Bambara.length;
+  const totalEmissions = allEmissions.length;
+
   return {
     panorama,
     dernieresActus,
@@ -69,11 +79,18 @@ async function getData() {
       arabe: grouped.Arabe[0] ?? null,
       bambara: grouped.Bambara[0] ?? null,
     },
+    articlesRecents: articlesRaw,
+    stats: {
+      emissions: totalEmissions,
+      journaux: journalsCount,
+      actualites: actusRaw.length,
+      articles: articlesRaw.length,
+    },
   };
 }
 
 export default async function HomePage() {
-  const { panorama, dernieresActus, derniersJournaux } = await getData();
+  const { panorama, dernieresActus, derniersJournaux, articlesRecents, stats } = await getData();
 
   return (
     <>
@@ -116,16 +133,31 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section style={{ background: "var(--bg-white)", borderBottom: "1px solid var(--border)" }}>
-        <StaggerContainer style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "1rem", textAlign: "center" }}>
-          {[{ label: "En direct 24h/24", sub: "96.00 FM Bamako" }, { label: "3 langues", sub: "Français · Arabe · Bambara" }, { label: "Actualités en temps réel", sub: "UNICEF · OCHA · ReliefWeb" }].map((item, i) => (
-            <StaggerItem key={i}>
-              <div style={{ padding: "1rem 0.5rem" }}>
-                <div style={{ fontFamily: "Inter, sans-serif", fontWeight: 700, fontSize: "0.95rem", color: "var(--text)" }}>{item.label}</div>
-                <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>{item.sub}</div>
-              </div>
-            </StaggerItem>
-          ))}</StaggerContainer>
+      {/* Chiffres clés */}
+      <section style={{ background: "linear-gradient(135deg, #1A5FA8 0%, #14437a 100%)", color: "white", padding: "2.5rem 1.5rem" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <StaggerContainer style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1.5rem", textAlign: "center" }}>
+            {[
+              { icon: <Mic size={20} />, label: "Émissions", value: stats.emissions },
+              { icon: <Globe size={20} />, label: "Journaux", value: stats.journaux },
+              { icon: <Radio size={20} />, label: "Actualités", value: stats.actualites },
+              { icon: <Eye size={20} />, label: "Articles", value: stats.articles },
+              { icon: <Radio size={20} />, label: "Radios partenaires", value: 13 },
+            ].map((item, i) => (
+              <StaggerItem key={i}>
+                <div style={{ padding: "0.75rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", marginBottom: "0.4rem", opacity: 0.8 }}>
+                    {item.icon}
+                    <span style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.04em", color: "rgba(255,255,255,0.8)" }}>{item.label}</span>
+                  </div>
+                  <div style={{ fontFamily: "Inter, sans-serif", fontWeight: 800, fontSize: "2rem", lineHeight: 1.1 }}>
+                    {item.value}
+                  </div>
+                </div>
+              </StaggerItem>
+            ))}
+          </StaggerContainer>
+        </div>
       </section>
 
       <FadeInUp><DerniersJournaux francais={derniersJournaux.francais} arabe={derniersJournaux.arabe} bambara={derniersJournaux.bambara} /></FadeInUp>
@@ -187,6 +219,53 @@ export default async function HomePage() {
           </StaggerContainer>
         </div>
       </section>
+
+      {/* Articles récents */}
+      {articlesRecents.length > 0 && (
+        <section style={{ background: "var(--bg-white)", padding: "4rem 1.5rem" }}>
+          <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+            <FadeInUp>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2rem" }}>
+                <div>
+                  <h2 style={{ fontFamily: "Inter, sans-serif", fontWeight: 800, fontSize: "1.5rem", color: "var(--text)" }}>Articles récents</h2>
+                  <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>Analyses, reportages et informations de la rédaction</p>
+                </div>
+                <Link href="/blog" style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.875rem", fontWeight: 600, color: "var(--blue)" }}>
+                  Tous les articles <ChevronRight size={16} />
+                </Link>
+              </div>
+            </FadeInUp>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.5rem" }}>
+              {articlesRecents.map((a) => (
+                <Link key={a.id} href={`/blog/${a.slug}`} style={{ display: "block", background: "var(--bg-white)", borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", textDecoration: "none", transition: "box-shadow 0.2s, transform 0.2s" }} className="article-card-home">
+                  <div style={{ position: "relative", aspectRatio: "16/9", background: "#e5e7eb" }}>
+                    {a.imageUrl ? (
+                      <Image src={a.imageUrl} alt={a.titre} fill style={{ objectFit: "cover" }} sizes="400px" />
+                    ) : (
+                      <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg, var(--blue) 0%, #14437a 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ color: "white", fontWeight: 800, fontSize: "1.25rem" }}>HD FM</span>
+                      </div>
+                    )}
+                    {a.categorie && (
+                      <div style={{ position: "absolute", top: 8, left: 8, background: "var(--green)", color: "white", fontSize: "0.7rem", fontWeight: 700, padding: "2px 10px", borderRadius: 4 }}>{a.categorie}</div>
+                    )}
+                  </div>
+                  <div style={{ padding: "1.25rem" }}>
+                    <h3 style={{ fontFamily: "Inter, sans-serif", fontWeight: 700, fontSize: "0.95rem", color: "var(--text)", lineHeight: 1.4, marginBottom: "0.5rem", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.titre}</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: "1rem", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <Calendar size={12} /> {format(new Date(a.createdAt), "d MMM yyyy", { locale: fr })}
+                      </span>
+                      {a.auteur_nom && <span>Par {a.auteur_nom}</span>}
+                    </div>
+                  </div>
+                  <style>{`.article-card-home:hover { box-shadow: 0 4px 20px rgba(26,95,168,0.12); transform: translateY(-2px); }`}</style>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section style={{ padding: "4rem 1.5rem" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -250,6 +329,35 @@ export default async function HomePage() {
               ))}
             </StaggerContainer>
           </div>
+
+          {/* Soutenir HD FM */}
+          <FadeInUp>
+            <div style={{ background: "var(--bg-white)", border: "1px solid var(--border)", borderRadius: 14, padding: "2.5rem 2rem", marginBottom: "2.5rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "2rem", alignItems: "center" }}>
+                <div style={{ flex: "1 1 280px" }}>
+                  <h3 style={{ fontFamily: "Inter, sans-serif", fontWeight: 800, fontSize: "1.2rem", color: "var(--text)", marginBottom: "0.5rem" }}>
+                    Soutenir Radio HD FM
+                  </h3>
+                  <p style={{ fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.7 }}>
+                    Vous souhaitez contribuer à notre mission d'information humanitaire ?
+                    Contactez-nous, abonnez-vous à notre chaîne YouTube ou devenez partenaire.
+                  </p>
+                </div>
+                <div style={{ flex: "1 1 280px", display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+                  <a href="https://www.youtube.com/@RadioHumanitéetDéveloppement" target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "#c4302b", color: "white", padding: "0.7rem 1.25rem", borderRadius: 8, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", transition: "opacity 0.15s" }} className="btn-yl">
+                    <Youtube size={18} /> YouTube
+                  </a>
+                  <Link href="/contact" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "var(--blue)", color: "white", padding: "0.7rem 1.25rem", borderRadius: 8, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", transition: "opacity 0.15s" }} className="btn-yl">
+                    <Mail size={18} /> Nous écrire
+                  </Link>
+                  <Link href="/programme" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "var(--green)", color: "white", padding: "0.7rem 1.25rem", borderRadius: 8, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", transition: "opacity 0.15s" }} className="btn-yl">
+                    <Calendar size={18} /> Programme
+                  </Link>
+                  <style>{`.btn-yl:hover { opacity: 0.9; }`}</style>
+                </div>
+              </div>
+            </div>
+          </FadeInUp>
 
           <FadeInUp delay={0.2}>
             <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "1rem" }}>

@@ -1,27 +1,38 @@
 import { db } from "@/db";
-import { emissions } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { actualites } from "@/db/schema";
+import { sql } from "drizzle-orm";
 import { syncYouTubeEmissions } from "./youtube";
+import { syncActualites } from "./rss";
 
-let syncing = false;
+let syncingEmissions = false;
+let syncingActualites = false;
 
 export async function maybeSyncEmissions(): Promise<void> {
-  if (syncing) return;
+  if (syncingEmissions) return;
 
-  const last = await db.select({ syncedAt: emissions.syncedAt })
-    .from(emissions)
-    .orderBy(desc(emissions.syncedAt))
-    .limit(1);
+  const last = await db.execute(sql`SELECT synced_at FROM emissions ORDER BY synced_at DESC LIMIT 1`);
+  const lastSync = (last.rows as any[])[0]?.synced_at;
+  if (lastSync && (Date.now() - new Date(lastSync).getTime() < 3600000)) return;
 
-  const lastSync = last[0]?.syncedAt;
-  const now = new Date();
-
-  if (lastSync && (now.getTime() - new Date(lastSync).getTime() < 3600000)) return;
-
-  syncing = true;
+  syncingEmissions = true;
   try {
     await syncYouTubeEmissions();
   } finally {
-    syncing = false;
+    syncingEmissions = false;
+  }
+}
+
+export async function maybeSyncActualites(): Promise<void> {
+  if (syncingActualites) return;
+
+  const last = await db.execute(sql`SELECT fetched_at FROM actualites ORDER BY fetched_at DESC LIMIT 1`);
+  const lastSync = (last.rows as any[])[0]?.fetched_at;
+  if (lastSync && (Date.now() - new Date(lastSync).getTime() < 1800000)) return;
+
+  syncingActualites = true;
+  try {
+    await syncActualites();
+  } finally {
+    syncingActualites = false;
   }
 }

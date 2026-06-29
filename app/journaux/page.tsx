@@ -1,12 +1,10 @@
 import { db } from "@/db";
-import { emissions } from "@/db/schema";
-import { desc, eq, like } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import EmissionCard from "@/components/emissions/EmissionCard";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Journaux" };
 export const dynamic = 'force-dynamic';
-export const revalidate = 3600;
 
 const LANGUES = [
   { key: "Français", label: "Journal en Français", color: "var(--blue)" },
@@ -15,10 +13,10 @@ const LANGUES = [
 ];
 
 export default async function JournauxPage() {
-  // Les journaux sont identifiés par les mots-clés dans le titre
-  const allEmissions = await db.select().from(emissions).where(eq(emissions.visible, true)).orderBy(desc(emissions.publishedAt)).limit(100);
+  const result = await db.execute(sql`SELECT id, yt_video_id as "ytVideoId", titre, description, thumbnail_url as "thumbnailUrl", duree, published_at as "publishedAt", synced_at as "syncedAt", visible, categorie FROM emissions WHERE visible = true ORDER BY published_at DESC LIMIT 100`);
+  const allEmissions = result.rows as any[];
 
-  const grouped: Record<string, typeof allEmissions> = { Français: [], Arabe: [], Bambara: [] };
+  const grouped: Record<string, any[]> = { Français: [], Arabe: [], Bambara: [] };
 
   for (const e of allEmissions) {
     const titre = e.titre.toLowerCase();

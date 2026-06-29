@@ -2,9 +2,6 @@ import Parser from "rss-parser";
 import { db } from "@/db";
 import { actualites } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import https from "https";
-import http from "http";
-import zlib from "zlib";
 
 const parser = new Parser({
   customFields: {
@@ -12,42 +9,22 @@ const parser = new Parser({
   },
 });
 
-function fetchXml(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fetcher = url.startsWith("https") ? https : http;
-    fetcher.get(url, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
-      const chunks: Buffer[] = [];
-      const encoding = res.headers["content-encoding"];
-      if (encoding === "gzip") {
-        const gunzip = zlib.createGunzip();
-        gunzip.on("data", (chunk: Buffer) => chunks.push(chunk));
-        gunzip.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-        gunzip.on("error", reject);
-        res.pipe(gunzip);
-      } else {
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-        res.on("error", reject);
-      }
-    }).on("error", reject);
-  });
-}
-
 interface RssSource {
-  name: "ReliefWeb" | "OCHA" | "UNICEF" | "UNHCR";
+  name: "ReliefWeb";
   url: string;
+  forceMali: boolean;
 }
 
 const RSS_SOURCES: RssSource[] = [
-  { name: "ReliefWeb", url: "https://reliefweb.int/updates/rss.xml?legacy-river=country/mli" },
-];
-
-const SECONDARY_SOURCES: RssSource[] = [
-  { name: "ReliefWeb", url: "https://reliefweb.int/updates/rss.xml" },
-];
-
-const BACKUP_SOURCES: RssSource[] = [
-  { name: "ReliefWeb", url: "https://reliefweb.int/updates/rss.xml" },
+  { name: "ReliefWeb", url: "https://reliefweb.int/country/mli/rss.xml", forceMali: true },
+  { name: "ReliefWeb", url: "https://reliefweb.int/country/bfa/rss.xml", forceMali: false },
+  { name: "ReliefWeb", url: "https://reliefweb.int/country/ner/rss.xml", forceMali: false },
+  { name: "ReliefWeb", url: "https://reliefweb.int/country/mrt/rss.xml", forceMali: false },
+  { name: "ReliefWeb", url: "https://reliefweb.int/updates/rss.xml", forceMali: false },
+  { name: "ReliefWeb", url: "https://reliefweb.int/organization/ocha/rss.xml", forceMali: false },
+  { name: "ReliefWeb", url: "https://reliefweb.int/organization/unicef/rss.xml", forceMali: false },
+  { name: "ReliefWeb", url: "https://reliefweb.int/organization/unhcr/rss.xml", forceMali: false },
+  { name: "ReliefWeb", url: "https://reliefweb.int/organization/wfp/rss.xml", forceMali: false },
 ];
 
 const MALI_KEYWORDS = [
@@ -97,11 +74,42 @@ const HUMANITARIAN_KEYWORDS = [
   "cohésion sociale", "réconciliation", "paix",
 ];
 
+const REJECT_KEYWORDS = [
+  "élection", "elections", "electoral", "vote", "scrutin", "candidat",
+  "président", "premier ministre", "gouvernement", "parlement", "assemblée nationale",
+  "coup d'état", "putsch", "junte", "transition politique",
+  "parti politique", "opposition politique", "coalition gouvernementale",
+  "diplomatie", "ambassadeur", "ambassade", "relations bilatérales",
+  "sommet politique", "accord politique", "négociation politique",
+  "opération militaire", "offensive militaire", "frappe aérienne",
+  "bilan militaire", "pertes militaires", "soldats tués", "combattants tués",
+  "victoire militaire", "défaite militaire", "front de guerre",
+  "armement", "livraison d'armes", "sanctions militaires",
+  "pib", "croissance économique", "inflation", "taux de change",
+  "bourse", "marché financier", "investissement étranger",
+  "accord commercial", "dette extérieure", "fmi accord",
+  "banque mondiale projet", "privatisation",
+  "football", "can 2024", "coupe du monde", "championnat",
+  "concert", "festival culturel", "cinéma", "musique",
+  "célébrité", "artiste",
+  "accident de la route", "accident de voiture", "incendie criminel",
+  "braquage", "vol à main armée", "trafic de drogue",
+];
+
 function scoreArticle(titre: string, resume: string): number {
   const text = (titre + " " + (resume || "")).toLowerCase();
+
+  const isRejected = REJECT_KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+  if (isRejected) {
+    console.log(`[RSS] Rejeté (non humanitaire) : ${titre}`);
+    return 0;
+  }
+
   if (MALI_KEYWORDS.some(kw => text.includes(kw))) return 3;
   if (SUBREGION_KEYWORDS.some(kw => text.includes(kw))) return 2;
   if (HUMANITARIAN_KEYWORDS.some(kw => text.includes(kw))) return 1;
+
+  console.log(`[RSS] Rejeté (hors scope) : ${titre}`);
   return 0;
 }
 
@@ -125,81 +133,52 @@ function extractImage(item: any): string | null {
   return null;
 }
 
-async function fetchSource(source: RssSource, isBackup = false): Promise<number> {
-  const xml = await fetchXml(source.url);
-  const feed = await parser.parseString(xml);
-  let added = 0;
-  let humanitaireGeneralCount = 0;
-  const MAX_HUMANITAIRE_GENERAL = 5;
-
-  for (const item of feed.items.slice(0, 30)) {
-    const guid = item.guid || item.link || "";
-    if (!guid) continue;
-
-    if (isBackup) {
-      const score = scoreArticle(item.title || "", item.contentSnippet || "");
-
-      if (score === 0) {
-        console.log(`[RSS] Rejeté : ${item.title}`);
-        continue;
-      }
-
-      if (score === 1) {
-        if (humanitaireGeneralCount >= MAX_HUMANITAIRE_GENERAL) continue;
-        humanitaireGeneralCount++;
-      }
-    }
-
-    const existing = await db.select().from(actualites).where(eq(actualites.guid, guid)).limit(1);
-    if (existing.length > 0) continue;
-
-    const imageUrl = extractImage(item);
-
-    await db.insert(actualites).values({
-      titre: item.title || "Sans titre",
-      resume: item.contentSnippet || item.summary || null,
-      imageUrl,
-      source: source.name,
-      sourceUrl: item.link || "",
-      publieLe: item.pubDate ? new Date(item.pubDate) : null,
-      guid,
-    });
-
-    console.log(`[RSS] Ajouté : ${item.title}`);
-    added++;
-  }
-
-  return added;
-}
-
 export async function syncActualites(): Promise<{ added: number; skipped: number }> {
   let added = 0;
   let skipped = 0;
 
   for (const source of RSS_SOURCES) {
     try {
-      added += await fetchSource(source);
-    } catch (err) {
-      console.error(`Erreur RSS ${source.name} (${source.url}):`, (err as Error).message?.slice(0, 60));
-    }
-  }
+      const feed = await parser.parseURL(source.url);
+      let humanitaireGeneralCount = 0;
 
-  for (const source of SECONDARY_SOURCES) {
-    try {
-      added += await fetchSource(source, true);
-    } catch (err) {
-      console.error(`Erreur RSS secondary ${source.name}:`, (err as Error).message?.slice(0, 60));
-    }
-  }
+      for (const item of feed.items.slice(0, 30)) {
+        const guid = item.guid || item.link || "";
+        if (!guid) continue;
 
-  if (added === 0) {
-    console.log("[RSS] Aucune source — tentative des sources de secours...");
-    for (const source of BACKUP_SOURCES) {
-      try {
-        added += await fetchSource(source, true);
-      } catch (err) {
-        console.error(`Erreur RSS backup ${source.name}:`, (err as Error).message?.slice(0, 60));
+        const scoreBase = scoreArticle(item.title || "", item.contentSnippet || "");
+        const score = source.forceMali && scoreBase > 0 ? 3 : scoreBase;
+
+        if (score === 0) continue;
+
+        if (score === 1) {
+          if (humanitaireGeneralCount >= 3) continue;
+          humanitaireGeneralCount++;
+        }
+
+        const existing = await db
+          .select()
+          .from(actualites)
+          .where(eq(actualites.guid, guid))
+          .limit(1);
+
+        if (existing.length > 0) { skipped++; continue; }
+
+        await db.insert(actualites).values({
+          titre: item.title || "Sans titre",
+          resume: item.contentSnippet || null,
+          imageUrl: extractImage(item),
+          source: source.name,
+          sourceUrl: item.link || "",
+          publieLe: item.pubDate ? new Date(item.pubDate) : null,
+          guid,
+        });
+
+        console.log(`[RSS score:${score}] ${item.title}`);
+        added++;
       }
+    } catch (err) {
+      console.error(`Erreur RSS ${source.url}:`, err);
     }
   }
 
